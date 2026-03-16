@@ -1,0 +1,21 @@
+# 使用 Node 20 保证环境现代化且稳定
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 1. 拷贝 package.json
+COPY package.json ./
+
+# 2. 核心修复步骤：
+# 直接在构建时安装具体版本的依赖，确保 uuid 是 v8（支持 require）
+# 这样即使你本地没有 node_modules，Docker 也能装对版本
+RUN npm install express mongodb ws uuid@8.3.2 lodash cors
+
+# 3. 拷贝源代码
+COPY . .
+
+# 4. 暴露后端端口
+EXPOSE 8081
+
+# 5. 启动服务
+CMD ["node", "index.js"]

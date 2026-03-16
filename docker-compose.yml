@@ -1,0 +1,65 @@
+services:
+  mongodb:
+    image: mongo:6
+    container_name: fortune-mongodb
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - fortune-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: fortune-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fortune-backend
+    environment:
+      PORT: 8081
+      MONGODB_URI: "mongodb://admin:password@mongodb:27017/fortune-sheet?authSource=admin"
+    ports:
+      - "8081:8081"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - fortune-network
+    restart: unless-stopped
+
+  web:
+    image: fortune-web
+    security_opt:
+      - seccomp:unconfined
+    privileged: true
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: fortune-web
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8081
+    ports:
+      - "32999:3000"
+    depends_on:
+      - backend
+    networks:
+      - fortune-network
+    restart: unless-stopped
+
+networks:
+  fortune-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
