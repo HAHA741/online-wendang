@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   title: "在线文档",
   description: "在线文档",
 };
-
+import { Suspense } from 'react'
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,7 +28,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <Suspense fallback={<div>Loading...</div>}>   {children}</Suspense>
       </body>
     </html>
   );
