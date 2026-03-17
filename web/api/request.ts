@@ -1,9 +1,22 @@
 import axios from 'axios';
 
+// 1. 定义默认的基础地址
+let baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081';
+
+// 2. 只有在浏览器环境下，才动态获取 host
+if (typeof window !== 'undefined') {
+  const host = window.location.hostname;
+  const httpProtocol = window.location.protocol;
+  baseURL = process.env.NEXT_PUBLIC_API_URL || `${httpProtocol}//${host}:8081`;
+} else {
+  // 3. 在服务端（Docker 内部）渲染时，使用内部服务名
+  // 注意：如果你是在构建静态页面，这里建议指向后端容器名
+  baseURL = 'http://fortune-backend:8081'; 
+}
 // 创建 axios 实例
 const service = axios.create({
   // 这里的 URL 应该对应你 Node.js 后端的地址
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081', 
+  baseURL: baseURL,
   timeout: 10000, // 请求超时时间
   headers: {
     'Content-Type': 'application/json'
