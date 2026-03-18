@@ -10,6 +10,11 @@ import { useRequest } from "ahooks";
 import { createWorkbook, getWorkbookList } from "../../api";
 import { Spin } from "antd";
 import dayjs from "dayjs";
+import {
+  FortuneExcelHelper,
+  importToolBarItem,
+  exportToolBarItem,
+} from "@corbe30/fortune-excel";
 // import { Meta, StoryFn } from "@storybook/react";
 
 // export default {
@@ -25,6 +30,8 @@ function Home() {
 
   const searchParams = useSearchParams();
   const workbookId = searchParams.get("workbookId");
+
+  const [key, setKey] = useState<number>(0);
 
   const [data, setData] = useState<Sheet[]>();
   const [error, setError] = useState(false);
@@ -57,8 +64,9 @@ function Home() {
 
     if (!workbookId) {
       const date = new Date();
-      
-      let res = await createAsync(`新建文档${dayjs(date).format("YYYY-MM-DD HH:mm:ss")}`);
+      let res = await createAsync(
+        `新建文档${dayjs(date).format("YYYY-MM-DD HH:mm:ss")}`,
+      );
       _workbookId = res?.workbookId;
     }
     // 拼接成正确的地址，端口依然是 8081
@@ -142,11 +150,23 @@ function Home() {
     );
   return (
     <Wrapper>
+      <FortuneExcelHelper
+        setKey={setKey}
+        setSheets={setData}
+        sheetRef={workbookRef}
+        config={{
+          // default = all values are true
+          import: { xlsx: true, csv: true },
+          export: { xlsx: true, csv: true },
+        }}
+      />
       <Workbook
+        key={key}
         ref={workbookRef}
         data={data}
         onChange={onChange}
         onOp={onOp}
+        customToolbarItems={[importToolBarItem(), exportToolBarItem()]}
         hooks={{
           afterSelectionChange,
         }}
