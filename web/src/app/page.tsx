@@ -80,6 +80,7 @@ function Home() {
     };
     socket.onmessage = (e) => {
       const msg = JSON.parse(e.data);
+      console.log(msg,'msg')
       if (msg.req === "getData") {
         setData(msg.data.map((d: any) => ({ id: d._id, ...d })));
       } else if (msg.req === "op") {

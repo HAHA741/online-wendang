@@ -1,0 +1,20 @@
+{
+  "name": "fortune-sheet-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server for FortuneSheet integration",
+  "type": "module", 
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.11.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "lodash": "^4.17.23",
+    "ws": "^8.19.0"
+  }
+}
