@@ -9,8 +9,8 @@ import _ from "lodash";
 
 // --- 配置区 ---
 // 运行命令时可以通过参数传入 workbookId，例如: node mcp-server.js <id>
-const WORKBOOK_ID = process.argv[2] || "default-workbook-id"; 
-const BACKEND_URL = "ws://localhost:8081/ws"; 
+const WORKBOOK_ID = process.argv[2] || "default-workbook-id";
+const BACKEND_URL = "ws://localhost:8081/ws";
 
 class FortuneMCPServer {
   constructor() {
@@ -18,9 +18,9 @@ class FortuneMCPServer {
     this.currentData = null; // 本地缓存最新的表格数据
     this.server = new Server(
       { name: "fortune-sheet-ai-controller", version: "1.0.0" },
-      { capabilities: { tools: {} } }
+      { capabilities: { tools: {} } },
     );
-    
+
     this.setupTools();
   }
 
@@ -59,7 +59,7 @@ class FortuneMCPServer {
         {
           name: "read_all_sheets",
           description: "获取当前工作簿中所有 Sheet 的名称、ID 和基本信息",
-          inputSchema: { type: "object", properties: {} }
+          inputSchema: { type: "object", properties: {} },
         },
         {
           name: "get_sheet_content",
@@ -67,10 +67,10 @@ class FortuneMCPServer {
           inputSchema: {
             type: "object",
             properties: {
-              sheetId: { type: "string", description: "Sheet 的唯一 ID" }
+              sheetId: { type: "string", description: "Sheet 的唯一 ID" },
             },
-            required: ["sheetId"]
-          }
+            required: ["sheetId"],
+          },
         },
         {
           name: "batch_update_cells",
@@ -86,13 +86,13 @@ class FortuneMCPServer {
                   properties: {
                     r: { type: "number", description: "行" },
                     c: { type: "number", description: "列" },
-                    value: { type: "string", description: "内容" }
-                  }
-                }
-              }
+                    value: { type: "string", description: "内容" },
+                  },
+                },
+              },
             },
-            required: ["sheetId", "updates"]
-          }
+            required: ["sheetId", "updates"],
+          },
         },
         {
           name: "insert_dimension",
@@ -101,14 +101,18 @@ class FortuneMCPServer {
             type: "object",
             properties: {
               sheetId: { type: "string" },
-              type: { type: "string", enum: ["row", "col"], description: "插入行还是列" },
+              type: {
+                type: "string",
+                enum: ["row", "col"],
+                description: "插入行还是列",
+              },
               index: { type: "number", description: "插入的位置索引" },
-              count: { type: "number", description: "插入的数量", default: 1 }
+              count: { type: "number", description: "插入的数量", default: 1 },
             },
-            required: ["sheetId", "type", "index"]
-          }
-        }
-      ]
+            required: ["sheetId", "type", "index"],
+          },
+        },
+      ],
     }));
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -116,44 +120,84 @@ class FortuneMCPServer {
 
       switch (name) {
         case "read_all_sheets":
-          const summary = (this.currentData || []).map(s => ({
+          const summary = (this.currentData || []).map((s) => ({
             name: s.name,
             id: s.id,
             rows: s.row,
-            cols: s.column
+            cols: s.column,
           }));
-          return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
+          return {
+            content: [{ type: "text", text: JSON.stringify(summary, null, 2) }],
+          };
 
         case "get_sheet_content":
           const sheet = _.find(this.currentData, { id: args.sheetId });
-          return { content: [{ type: "text", text: JSON.stringify(sheet?.celldata || [], null, 2) }] };
-
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(sheet?.celldata || [], null, 2),
+              },
+            ],
+          };
         case "batch_update_cells":
-          // 构造符合 op.js 逻辑的 ops 数组
-          const ops = args.updates.map(upd => ({
-            op: "replace",
-            id: args.sheetId,
-            path: ["data", upd.r, upd.c, "v"], 
-            value: upd.value
-          }));
+          const ops = args.updates.map((upd) => {
+            const isFormula = String(upd.value).startsWith("=");
+
+            // 构造符合 FortuneSheet 规范的单元格对象
+            let cellValue = {
+              v: isFormula ? 0 : upd.value, // 公式初始值设为0
+              m: isFormula ? "0" : String(upd.value),
+              ct: { fa: "General", t: isFormula ? "n" : "g" }, // n代表数字/计算，g代表普通文本
+            };
+
+            // 如果是公式，必须加上 f 字段
+            if (isFormula) {
+              cellValue.f = upd.value;
+            }
+
+            return {
+              op: "replace",
+              id: args.sheetId,
+              path: ["data", upd.r, upd.c],
+              value: cellValue,
+            };
+          });
+
           this.sendOp(ops);
-          return { content: [{ type: "text", text: `已成功更新 ${ops.length} 个单元格` }] };
+          return {
+            content: [
+              {
+                type: "text",
+                text: `已写入 ${ops.length} 个单元格（含公式识别）`,
+              },
+            ],
+          };
 
         case "insert_dimension":
           // 构造 insertRowCol 特殊指令
-          const insertOp = [{
-            op: "insertRowCol",
-            id: args.sheetId,
-            path: [],
-            value: {
-              type: args.type,
-              index: args.index,
-              count: args.count || 1,
-              direction: "rightbottom"
-            }
-          }];
+          const insertOp = [
+            {
+              op: "insertRowCol",
+              id: args.sheetId,
+              path: [],
+              value: {
+                type: args.type,
+                index: args.index,
+                count: args.count || 1,
+                direction: "rightbottom",
+              },
+            },
+          ];
           this.sendOp(insertOp);
-          return { content: [{ type: "text", text: `已在位置 ${args.index} 插入 ${args.count} ${args.type === 'row' ? '行' : '列'}` }] };
+          return {
+            content: [
+              {
+                type: "text",
+                text: `已在位置 ${args.index} 插入 ${args.count} ${args.type === "row" ? "行" : "列"}`,
+              },
+            ],
+          };
 
         default:
           throw new Error("Unknown tool");

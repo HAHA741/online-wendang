@@ -14,6 +14,11 @@ RUN npm install express mongodb ws uuid@8.3.2 lodash cors
 # 3. 拷贝源代码
 COPY . .
 
+# 修复 Windows CRLF 换行符，防止 shell 脚本在 Linux 上执行失败
+RUN find /app/build_ci -type f \( -name "*.sh" -o -name "make" \) \
+    -exec sed -i 's/\r$//' {} + \
+    && chmod +x /app/build_ci/deploy.sh /app/build_ci/make
+
 # 4. 暴露后端端口
 EXPOSE 8081
 

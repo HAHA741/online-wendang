@@ -1,0 +1,15 @@
+#!/usr/bin/bash
+
+# hold on  to debug 
+# sleep infinity
+
+# 不能漏，gitlab ci默认有这个全局参数
+export CI=false
+
+npm config set registry https://registry.npmmirror.com/
+
+# rm -rf pnpm-lock.yaml
+# rm -rf node_modules
+# npm cache verify
+
+pnpm install && pnpm run build

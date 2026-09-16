@@ -1,0 +1,88 @@
+.main:
+  retry:
+    max: 1
+    when:
+      - script_failure
+  except:
+    variables:
+      - $CI_COMMIT_MESSAGE =~ /ci init/
+      - $CI_COMMIT_MESSAGE =~ /ci skip/
+
+.arm64_template:
+  stage: build_push
+  extends: .main
+  variables:
+    TAG_NAME: ${CI_COMMIT_REF_NAME}_aarch64
+  image: intellif.io/build/node:20.12_aarch64
+  tags:
+    - arm64
+
+.amd64_template:
+  extends: .main
+  stage: build_push
+  image: intellif.io/build/node:20.18
+  tags:
+    - amd64
+
+variables:
+  GIT_CLONE_PATH: $CI_BUILDS_DIR/runner-${CI_RUNNER_ID}-concurrent-${CI_CONCURRENT_PROJECT_ID}/${CI_PROJECT_PATH}
+
+stages:
+  - variable
+  - analyze
+  - code_build
+  - docker_build_push
+  - test
+
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .pnpm-store
+    - node_modules/.cache/
+
+before_script:
+  - echo JOB_RESULT=failed >> variables.ci
+  - git clone http://192.168.70.8/chenyu/ci-tool.git
+  - npm i pnpm@10 --global --registry https://registry.npmmirror.com
+  - pnpm config set store-dir .pnpm-store
+
+after_script:
+  - ls -l out
+  - ls -1 --group-directories-first out  | xargs -I {}  ls -l out/{}
+  - source variables.ci
+  - python3 ci-tool notify --${JOB_RESULT}
+
+code_build:
+  extends: .amd64_template
+  stage: code_build
+  script:
+    - python3 ci-tool build --version ${CI_COMMIT_REF_NAME}
+    - echo JOB_RESULT=successed >> variables.ci
+  artifacts:
+    paths:
+      - out
+      - build_ci
+    expire_in: 2 h
+
+amd64_docker_build_push:
+  extends: .amd64_template
+  variables:
+    TAG_NAME: ${CI_COMMIT_REF_NAME}
+    FROM_IMAGE: node:20-alpine
+  dependencies:
+    - code_build
+  stage: docker_build_push
+  script:
+    - python3 ci-tool build --image
+    - python3 ci-tool push --image
+    - echo JOB_RESULT=successed >> variables.ci
+
+arm64_docker_build_push:
+  extends: .arm64_template
+  dependencies:
+    - code_build
+  stage: docker_build_push
+  script:
+    - python3 ci-tool build --image
+    - python3 ci-tool push --image
+    - echo JOB_RESULT=successed >> variables.ci

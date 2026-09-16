@@ -1,0 +1,33 @@
+variables:
+  service_name: fortune-service
+  # Node.js backend service
+  language: web
+  docker_type: web
+  is_image: true
+  port: 8081
+  install_dir: /opt/fortune-service
+  mount: /opt/fortune-service/config/:/opt/conf,/opt/fortune-service/nginx:/etc/nginx/conf.d
+
+
+
+tasks:
+  - copy:
+      - src: index.js
+      - dest: .
+
+  - copy:
+      - src: op.js
+      - dest: .
+
+  - copy:
+      - src: package.json
+      - dest: .
+
+
+  - copy:
+      - src: node_modules/
+      - dest: node_modules
+
+  - copy:
+      - src: public/conf/
+      - dest: .

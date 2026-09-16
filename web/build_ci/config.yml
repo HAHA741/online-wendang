@@ -1,0 +1,18 @@
+variables:
+  service_name: fortune-web
+  # Next.js web frontend
+  language: web
+  docker_type: web
+  is_image: true
+  port: 3018
+  install_dir: /opt/fortune-web
+  mount: /opt/fortune-web/conf:/usr/share/nginx/fortune-web/conf,/opt/fortune-web/upload:/usr/share/nginx/fortune-web/upload,/opt/fortune-web/nginx:/etc/nginx/conf.d
+
+tasks:
+  - copy:
+      - src: dist/
+      - dest: .
+
+  - copy:
+      - src: public/
+      - dest: .

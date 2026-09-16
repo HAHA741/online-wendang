@@ -1,0 +1,6 @@
+# 强制所有 shell 脚本使用 LF 换行，避免 Windows CRLF 导致容器启动失败
+*.sh        text eol=lf
+build_ci/make text eol=lf
+
+# 其他文本文件自动归一化
+*           text=auto

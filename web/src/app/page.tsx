@@ -79,6 +79,7 @@ function Home() {
       socket.send(JSON.stringify({ req: "getData" }));
     };
     socket.onmessage = (e) => {
+      console.log("收到消息",e)
       const msg = JSON.parse(e.data);
       console.log(msg,'msg')
       if (msg.req === "getData") {

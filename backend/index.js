@@ -20,11 +20,13 @@ const createDefaultSheet = (workbookId) => ({
   config: {},
   status: 1,
 });
-
+const user = 'admin';
+const pass = 'password';
 const dbName = "fortune-sheet";
 const COLL_SHEETS = "workbook";
 const COLL_META = "workbook_meta";
-const uri = process.env.MONGODB_URI || "mongodb://localhost:27017";
+const uri = process.env.MONGODB_URI || `mongodb://${user}:${pass}@${process.env.LOCAL_IP || 'localhost'}:27018/?authSource=admin`;
+console.info(`Connecting to MongoDB at ${uri}`);
 const client = new MongoClient(uri);
 
 // 按 workbookId 隔离的在线状态
