@@ -30,7 +30,7 @@ services:
       PORT: 8081
       MONGODB_URI: "mongodb://admin:password@mongodb:27017/fortune-sheet?authSource=admin"
     ports:
-      - "8081:8081"
+      - "38222:8081"
     depends_on:
       mongodb:
         condition: service_healthy

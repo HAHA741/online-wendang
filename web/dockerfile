@@ -5,9 +5,10 @@ FROM node:20-slim AS builder
 WORKDIR /app
 
 # 启用 corepack 并直接安装 pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
-# 解决 pnpm 在 Docker 中的符号链接问题
-RUN pnpm config set node-linker hoisted
+RUN corepack enable && corepack prepare pnpm@12.4.2 --activate
+
+RUN printf "nodeLinker: hoisted\nallowBuilds:\n  sharp: true\n  unrs-resolver: true\n" > pnpm-workspace.yaml
+
 
 # 1. 拷贝依赖文件
 COPY package.json pnpm-lock.yaml* ./
@@ -27,8 +28,8 @@ FROM node:20-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
-RUN pnpm config set node-linker hoisted
+RUN corepack enable && corepack prepare pnpm@12.4.2 --activate
+RUN printf "nodeLinker: hoisted\nallowBuilds:\n  sharp: true\n  unrs-resolver: true\n" > pnpm-workspace.yaml
 
 # 拷贝构建产物
 COPY --from=builder /app/package.json ./

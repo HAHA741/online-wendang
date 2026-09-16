@@ -89,7 +89,7 @@ function Home() {
     activeWorkbookIdRef.current = _workbookId;
     // 拼接成正确的地址，端口依然是 8081
     const socket = new WebSocket(
-      `${protocol}//${host}:8081/ws?workbookId=${_workbookId}`,
+      `${protocol}//${host}:38222/ws?workbookId=${_workbookId}`,
     );
     wsRef.current = socket;
 
