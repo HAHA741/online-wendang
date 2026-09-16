@@ -20,6 +20,10 @@ tasks:
       - dest: .
 
   - copy:
+      - src: workbook.js
+      - dest: .
+
+  - copy:
       - src: package.json
       - dest: .
 

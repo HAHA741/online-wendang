@@ -7,12 +7,20 @@ const _ = require("lodash");
 const url = require("url");
 const cors = require("cors");
 const { applyOp } = require("./op");
+const {
+  COLL_META,
+  COLL_SHEETS,
+  getWorkbookContext,
+  getWorkbookSheets,
+  replaceWorkbookSheets,
+} = require("./workbook");
 
 // 默认 Sheet 模板
-const createDefaultSheet = (workbookId) => ({
+const createDefaultSheet = (workbookId, revision) => ({
   name: "Sheet1",
   id: uuid.v4(),
   workbookId, // 关联所属工作簿
+  revision,
   celldata: [{ r: 0, c: 0, v: null }],
   order: 0,
   row: 84,
@@ -23,8 +31,6 @@ const createDefaultSheet = (workbookId) => ({
 const user = 'admin';
 const pass = 'password';
 const dbName = "fortune-sheet";
-const COLL_SHEETS = "workbook";
-const COLL_META = "workbook_meta";
 const uri = process.env.MONGODB_URI || `mongodb://${user}:${pass}@${process.env.LOCAL_IP || 'localhost'}:27018/?authSource=admin`;
 console.info(`Connecting to MongoDB at ${uri}`);
 const client = new MongoClient(uri);
@@ -41,8 +47,11 @@ initMongoDB();
 
 const app = express();
 app.use(cors()); // 允许跨域请求
-app.use(express.json()); // 支持 POST body
+app.use(express.json({ limit: "50mb" })); // 支持导入较大的工作簿
 const port = process.env.PORT || 8081;
+
+const serializeSheets = (sheets) =>
+  sheets.map(({ _id, ...sheet }) => sheet);
 
 // --- REST API ---
 
@@ -57,6 +66,7 @@ app.get("/workbooks", async (req, res) => {
 app.post("/workbooks", async (req, res) => {
   const db = client.db(dbName);
   const workbookId = uuid.v4();
+  const revision = uuid.v4();
   const name = req.body.name || "未命名表格";
 
   // 插入元数据
@@ -64,10 +74,13 @@ app.post("/workbooks", async (req, res) => {
     _id: workbookId,
     name,
     createTime: new Date(),
+    activeRevision: revision,
   });
 
   // 初始化第一张 Sheet
-  await db.collection(COLL_SHEETS).insertOne(createDefaultSheet(workbookId));
+  await db
+    .collection(COLL_SHEETS)
+    .insertOne(createDefaultSheet(workbookId, revision));
 
   res.json({ ok: true, workbookId });
 });
@@ -76,15 +89,32 @@ app.post("/workbooks", async (req, res) => {
 app.get("/workbook/:id", async (req, res) => {
   const workbookId = req.params.id;
   const db = client.db(dbName);
-  const data = await db.collection(COLL_SHEETS).find({ workbookId }).toArray();
-  
-  data.forEach((sheet) => {
-    if (!_.isUndefined(sheet._id)) delete sheet._id;
-  });
-  res.json(data);
+  const data = await getWorkbookSheets(db, workbookId);
+  res.json(serializeSheets(data));
 });
 
-// 4. 删除某个工作簿
+// 4. 原子切换当前工作簿的全部 Sheet
+app.put("/workbook/:id/sheets", async (req, res) => {
+  const workbookId = req.params.id;
+  const db = client.db(dbName);
+  const result = await replaceWorkbookSheets(db, workbookId, req.body.sheets);
+
+  if (result.cleanupError) {
+    console.warn(
+      `Workbook ${workbookId} switched to ${result.revision}, but old sheets cleanup failed`,
+      result.cleanupError
+    );
+  }
+
+  res.json({
+    ok: true,
+    workbookId,
+    revision: result.revision,
+    sheets: result.sheets,
+  });
+});
+
+// 5. 删除某个工作簿
 app.delete("/workbook/:id", async (req, res) => {
   const workbookId = req.params.id;
   const db = client.db(dbName);
@@ -93,6 +123,16 @@ app.delete("/workbook/:id", async (req, res) => {
   await db.collection(COLL_SHEETS).deleteMany({ workbookId });
   
   res.json({ ok: true });
+});
+
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error);
+  console.error(error);
+  res.status(error.statusCode || 500).json({
+    ok: false,
+    code: error.code || "INTERNAL_ERROR",
+    message: error.statusCode ? error.message : "服务器内部错误",
+  });
 });
 
 const server = app.listen(port, () => {
@@ -106,7 +146,11 @@ const connections = {};
 // 仅广播给同一工作簿的其它用户
 const broadcastToRoom = (selfId, workbookId, data) => {
   Object.values(connections).forEach((ws) => {
-    if (ws.id !== selfId && ws.workbookId === workbookId) {
+    if (
+      ws.id !== selfId &&
+      ws.workbookId === workbookId &&
+      ws.readyState === 1
+    ) {
       ws.send(data);
     }
   });
@@ -129,32 +173,70 @@ wss.on("connection", (ws, req) => {
   connections[ws.id] = ws;
 
   ws.on("message", async (data) => {
-    const msg = JSON.parse(data.toString());
-    const db = client.db(dbName);
+    let msg;
+    try {
+      msg = JSON.parse(data.toString());
+      const db = client.db(dbName);
 
-    if (msg.req === "getData") {
-      const sheets = await db.collection(COLL_SHEETS).find({ workbookId }).toArray();
-      ws.send(JSON.stringify({ req: msg.req, data: sheets }));
-      ws.send(JSON.stringify({ req: "addPresences", data: presencesByBook[workbookId] || [] }));
-    } 
-    else if (msg.req === "op") {
-      // 协同编辑操作
-      await applyOp(db.collection(COLL_SHEETS), msg.data);
-      broadcastToRoom(ws.id, workbookId, data.toString());
-    } 
-    else if (msg.req === "addPresences") {
-      ws.presences = msg.data;
-      broadcastToRoom(ws.id, workbookId, data.toString());
+      if (msg.req === "getData") {
+        const sheets = await getWorkbookSheets(db, workbookId);
+        ws.send(
+          JSON.stringify({ req: msg.req, data: serializeSheets(sheets) })
+        );
+        ws.send(
+          JSON.stringify({
+            req: "addPresences",
+            data: presencesByBook[workbookId] || [],
+          })
+        );
+      } else if (msg.req === "op") {
+        // 协同编辑操作只允许更新当前工作簿的活动版本
+        const { scope } = await getWorkbookContext(db, workbookId);
+        await applyOp(db.collection(COLL_SHEETS), msg.data, scope);
+        broadcastToRoom(ws.id, workbookId, data.toString());
+        ws.send(
+          JSON.stringify({
+            req: "opAck",
+            ok: true,
+            requestId: msg.requestId,
+          })
+        );
+      } else if (msg.req === "replaceData") {
+        // 导入落库成功后，从数据库读取当前版本并同步给其它协作者
+        const sheets = await getWorkbookSheets(db, workbookId);
+        broadcastToRoom(
+          ws.id,
+          workbookId,
+          JSON.stringify({
+            req: "replaceData",
+            data: serializeSheets(sheets),
+          })
+        );
+      } else if (msg.req === "addPresences") {
+        ws.presences = msg.data;
+        broadcastToRoom(ws.id, workbookId, data.toString());
 
-      // 更新该书的在线状态列表
-      let bookPresences = presencesByBook[workbookId] || [];
-      bookPresences = _.differenceBy(bookPresences, msg.data, (v) =>
-        v.userId == null ? v.username : v.userId
-      ).concat(msg.data);
-      presencesByBook[workbookId] = bookPresences;
-    } 
-    else if (msg.req === "removePresences") {
-      broadcastToRoom(ws.id, workbookId, data.toString());
+        // 更新该书的在线状态列表
+        let bookPresences = presencesByBook[workbookId] || [];
+        bookPresences = _.differenceBy(bookPresences, msg.data, (v) =>
+          v.userId == null ? v.username : v.userId
+        ).concat(msg.data);
+        presencesByBook[workbookId] = bookPresences;
+      } else if (msg.req === "removePresences") {
+        broadcastToRoom(ws.id, workbookId, data.toString());
+      }
+    } catch (error) {
+      console.error(error);
+      if (ws.readyState === 1) {
+        ws.send(
+          JSON.stringify({
+            req: "error",
+            source: msg?.req || "unknown",
+            code: error.code || "INTERNAL_ERROR",
+            message: error.message || "服务器内部错误",
+          })
+        );
+      }
     }
   });
 

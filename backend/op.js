@@ -1,16 +1,47 @@
 /* eslint-disable no-await-in-loop */
 const _ = require("lodash");
 
+function createSheetNotFoundError(details = {}) {
+  const error = new Error("工作表已失效，请重新加载后重试");
+  error.code = "SHEET_NOT_FOUND";
+  error.details = details;
+  return error;
+}
+
 /**
  * @param {import("mongodb").Collection} collection mongodb collection
  * @param {any[]} ops op list
+ * @param {Record<string, any>} scope workbook scope
  */
-async function applyOp(collection, ops) {
+async function applyOp(collection, ops, scope = {}) {
   const operations = [];
+  const targetIds = _.uniq(
+    ops
+      .filter(
+        (op) =>
+          op.op !== "addSheet" && !(op.path?.length === 0 && op.op === "add")
+      )
+      .map((op) => op.id)
+      .filter((id) => id != null)
+  );
+
+  if (targetIds.length > 0) {
+    const existingSheetCount = await collection.countDocuments({
+      ...scope,
+      id: { $in: targetIds },
+    });
+    if (existingSheetCount !== targetIds.length) {
+      throw createSheetNotFoundError({
+        expectedSheetCount: targetIds.length,
+        actualSheetCount: existingSheetCount,
+      });
+    }
+  }
+
   // eslint-disable-next-line no-restricted-syntax
   for (const op of ops) {
     const { path, id } = op;
-    const filter = { id };
+    const filter = { ...scope, id };
     if (op.op === "insertRowCol") {
       /**
        * special op: insertRowCol
@@ -74,7 +105,9 @@ async function applyOp(collection, ops) {
       /**
        * special op: addSheet
        */
-      operations.push({ insertOne: { document: op.value } });
+      const document = { ...op.value, ...scope };
+      delete document._id;
+      operations.push({ insertOne: { document } });
     } else if (op.op === "deleteSheet") {
       /**
        * special op: deleteSheet
@@ -147,7 +180,9 @@ async function applyOp(collection, ops) {
       console.error("row assigning not supported");
     } else if (path.length === 0 && op.op === "add") {
       // add new sheet
-      operations.push({ insertOne: { document: op.value } });
+      const document = { ...op.value, ...scope };
+      delete document._id;
+      operations.push({ insertOne: { document } });
     } else if (path[0] !== "data") {
       // other config update
       if (op.op === "remove") {
@@ -177,7 +212,36 @@ async function applyOp(collection, ops) {
       console.error("unprocessable op", op);
     }
   }
-  collection.bulkWrite(operations);
+  if (operations.length === 0) {
+    return {
+      matchedCount: 0,
+      modifiedCount: 0,
+      deletedCount: 0,
+      insertedCount: 0,
+    };
+  }
+
+  const expectedMatchedCount = operations.filter(
+    (operation) => operation.updateOne
+  ).length;
+  const expectedDeletedCount = operations.filter(
+    (operation) => operation.deleteOne
+  ).length;
+  const result = await collection.bulkWrite(operations, { ordered: true });
+
+  if (
+    result.matchedCount < expectedMatchedCount ||
+    result.deletedCount < expectedDeletedCount
+  ) {
+    throw createSheetNotFoundError({
+      expectedMatchedCount,
+      actualMatchedCount: result.matchedCount,
+      expectedDeletedCount,
+      actualDeletedCount: result.deletedCount,
+    });
+  }
+
+  return result;
 }
 
 module.exports = {
