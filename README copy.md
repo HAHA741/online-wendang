@@ -24,52 +24,7 @@ docker build --no-cache -f ./backend/dockerfile -t fortune-backend:latest ./back
 docker build --no-cache -f ./web/dockerfile -t fortune-web:latest ./web
 ```
 
-### 2. 导出 tar 镜像包
-
-镜像构建成功后，在项目根目录创建 `packages` 目录并导出 tar 包：
-
-```powershell
-New-Item -ItemType Directory -Force .\packages
-docker save -o .\packages\fortune-web-latest.tar fortune-web:latest
-docker save -o .\packages\fortune-backend-latest.tar fortune-backend:latest
-```
-
-如果需要将前端、后端和 MongoDB 镜像合并为一个离线包：
-
-```powershell
-docker pull mongo:6
-docker save -o .\packages\fortune-all-latest.tar fortune-web:latest fortune-backend:latest mongo:6
-```
-
-生成位置：
-
-```text
-D:\ProjectsMine\ZaiXianWenDang\forune\packages\
-```
-
-查看 tar 文件和校验值：
-
-```powershell
-Get-ChildItem .\packages\*.tar
-Get-FileHash .\packages\fortune-web-latest.tar -Algorithm SHA256
-Get-FileHash .\packages\fortune-backend-latest.tar -Algorithm SHA256
-```
-
-在目标服务器导入镜像：
-
-```bash
-docker load -i fortune-web-latest.tar
-docker load -i fortune-backend-latest.tar
-```
-
-导入后检查：
-
-```bash
-docker image ls fortune-web
-docker image ls fortune-backend
-```
-
-### 3. 启动服务
+### 2. 启动服务
 
 镜像构建完成后，使用仓库根目录的 `docker-compose.yml` 启动 MongoDB、后端和前端：
 
@@ -85,7 +40,7 @@ docker compose up -d --no-build
 | 后端 | http://localhost:8081 |
 | MongoDB | localhost:27018 |
 
-### 4. 检查运行状态
+### 3. 检查运行状态
 
 ```bash
 docker compose ps
@@ -107,7 +62,7 @@ Test-NetConnection 127.0.0.1 -Port 32999
 Test-NetConnection 127.0.0.1 -Port 8081
 ```
 
-### 5. 停止服务
+### 4. 停止服务
 
 ```bash
 docker compose down
